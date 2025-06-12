@@ -49,10 +49,10 @@ def generate_reply(transcript):
 
 @app.route("/call", methods=["POST"])
 def call():
-    response = """
+    response = f"""
     <Response>
         <Say voice="Polly.Nicole">Hi, this is Kitchen Design. How can I help you today?</Say>
-        <Record maxLength="30" transcribe="true" transcribeCallback="/transcription" />
+        <Record maxLength="30" transcribe="true" transcribeCallback="{BASE_URL}/transcription" />
     </Response>
     """
     return Response(response, mimetype="text/xml")
