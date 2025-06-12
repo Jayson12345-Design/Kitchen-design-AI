@@ -3,6 +3,7 @@ import openai
 import os
 import smtplib
 from email.mime.text import MIMEText
+import urllib.parse
 
 app = Flask(__name__)
 
@@ -63,18 +64,37 @@ def transcription():
     if decision == "forward":
         response = f"""
         <Response>
-            <Say voice="Polly.Nicole">Great, connecting you now.</Say>
-            <Dial>{FORWARD_NUMBER}</Dial>
+            <Redirect>/response?type=forward</Redirect>
         </Response>
         """
     else:
         ai_reply = generate_reply(transcript)
         email_body = f"📞 Call from: {caller}\n\n📝 Transcript:\n{transcript}\n\n🤖 AI Reply:\n{ai_reply}"
         send_email("Kitchen Design Call Summary", email_body)
+        encoded = urllib.parse.quote(ai_reply)
         response = f"""
         <Response>
-            <Say voice="Polly.Nicole">{ai_reply}</Say>
-            <Hangup/>
+            <Redirect>/response?type=email&msg={encoded}</Redirect>
         </Response>
         """
     return Response(response, mimetype="text/xml")
+
+@app.route("/response", methods=["POST"])
+def response():
+    response_type = request.args.get("type")
+    if response_type == "forward":
+        twiml = f"""
+        <Response>
+            <Say voice="Polly.Nicole">Great, connecting you now.</Say>
+            <Dial>{FORWARD_NUMBER}</Dial>
+        </Response>
+        """
+    else:
+        msg = request.args.get("msg", "Thank you for calling. We’ll follow up soon.")
+        twiml = f"""
+        <Response>
+            <Say voice="Polly.Nicole">{msg}</Say>
+            <Hangup/>
+        </Response>
+        """
+    return Response(twiml, mimetype="text/xml")
