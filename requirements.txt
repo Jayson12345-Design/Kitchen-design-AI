@@ -1,3 +1,4 @@
-Flask==2.2.5
-openai>=1.0.0
+flask==2.3.3
 gunicorn==21.2.0
+twilio==8.10.0
+openai==1.30.1
