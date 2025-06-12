@@ -13,6 +13,8 @@ EMAIL_TO = os.getenv("EMAIL_TO")
 EMAIL_FROM = os.getenv("EMAIL_FROM")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 
+BASE_URL = "https://kitchen-design-ai-1.onrender.com"
+
 def send_email(subject, body):
     msg = MIMEText(body)
     msg["Subject"] = subject
@@ -64,7 +66,7 @@ def transcription():
     if decision == "forward":
         response = f"""
         <Response>
-            <Redirect>/response?type=forward</Redirect>
+            <Redirect>{BASE_URL}/response?type=forward</Redirect>
         </Response>
         """
     else:
@@ -74,7 +76,7 @@ def transcription():
         encoded = urllib.parse.quote(ai_reply)
         response = f"""
         <Response>
-            <Redirect>/response?type=email&msg={encoded}</Redirect>
+            <Redirect>{BASE_URL}/response?type=email&msg={encoded}</Redirect>
         </Response>
         """
     return Response(response, mimetype="text/xml")
