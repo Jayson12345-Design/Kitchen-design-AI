@@ -19,8 +19,8 @@ EMAIL_TO = os.environ["EMAIL_TO"]
 # Phone numbers for forwarding
 FORWARD_NUMBERS = {
     "jayson": "+19076060669",
-    "art": "+1xxxxxxxxxx",
-    "paul": "+1xxxxxxxxxx"
+    "art": "+19413501228",
+    "paul": "+19712171878"
 }
 
 @app.route("/call", methods=["POST"])
