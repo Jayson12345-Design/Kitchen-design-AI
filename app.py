@@ -4,6 +4,7 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 import urllib.parse
+import json
 
 app = Flask(__name__)
 
@@ -23,14 +24,12 @@ def send_email(subject, body):
 
 def generate_reply_and_lead_flag(transcript):
     system_prompt = (
-        "You are an AI receptionist for a kitchen remodeling business. "
-        "Analyze the message below. Respond professionally and briefly. "
-        "Also determine if the caller is a LEAD (interested in getting a kitchen done). "
-        "Reply in JSON format with two fields: 'reply' and 'is_lead' (true/false)."
+        "You are a smart receptionist for a kitchen remodeling company. "
+        "If the caller sounds like a lead (interested in getting a kitchen done), respond with JSON: "
+        '{"reply": "...", "is_lead": true}. If not a lead, use is_lead: false. Respond only in JSON.'
     )
-    user_prompt = f"Customer said: '{transcript}'"
-    
-    chat = client.chat.completions.create(
+    user_prompt = f"Caller said: {transcript}"
+    response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": system_prompt},
@@ -38,18 +37,19 @@ def generate_reply_and_lead_flag(transcript):
         ],
         response_format="json"
     )
-
-    reply_json = chat.choices[0].message.content
-    import json
-    result = json.loads(reply_json)
-    return result["reply"], result["is_lead"]
+    try:
+        reply_data = json.loads(response.choices[0].message.content.strip())
+        return reply_data["reply"], reply_data["is_lead"]
+    except Exception as e:
+        print("Failed to parse AI response:", e)
+        return "Sorry, I didn't catch that. Can you please repeat?", False
 
 @app.route("/call", methods=["POST"])
 def call():
     return Response("""
         <Response>
             <Say voice="Polly.Nicole">Hi, this is Kitchen Design. How can I help you today?</Say>
-            <Record maxLength="30" transcribe="true" transcribeCallback="https://kitchen-design-ai-1.onrender.com/transcription" />
+            <Record maxLength="30" transcribe="true" transcribeCallback="/transcription" />
         </Response>
     """, mimetype="text/xml")
 
@@ -57,6 +57,8 @@ def call():
 def transcription():
     transcript = request.form.get("TranscriptionText", "").strip()
     caller = request.form.get("From", "Unknown")
+    print("Transcript:", transcript)
+
     reply, is_lead = generate_reply_and_lead_flag(transcript)
 
     email_body = f"📞 Call from: {caller}\n\n📝 Transcript:\n{transcript}\n\n🤖 AI Reply:\n{reply}\n\nLead: {is_lead}"
@@ -65,32 +67,28 @@ def transcription():
     if is_lead:
         return Response("""
             <Response>
-                <Redirect method="POST">https://kitchen-design-ai-1.onrender.com/transfer</Redirect>
-            </Response>
-        """, mimetype="text/xml")
-    else:
-        encoded = urllib.parse.quote(reply)
-        return Response(f"""
-            <Response>
-                <Redirect method="POST">https://kitchen-design-ai-1.onrender.com/response?msg={encoded}</Redirect>
+                <Say voice="Polly.Nicole">Transferring you to Jayson now.</Say>
+                <Dial>+19076060669</Dial>
             </Response>
         """, mimetype="text/xml")
 
-@app.route("/response", methods=["POST"])
-def response():
-    ai_reply = request.args.get("msg", "Thank you. We'll be in touch.")
+    encoded = urllib.parse.quote(reply)
+    return Response(f"""
+        <Response>
+            <Redirect method="POST">/respond?msg={encoded}</Redirect>
+        </Response>
+    """, mimetype="text/xml")
+
+@app.route("/respond", methods=["POST"])
+def respond():
+    ai_reply = request.args.get("msg", "Thanks! How else can I help?")
     return Response(f"""
         <Response>
             <Say voice="Polly.Nicole">{ai_reply}</Say>
-            <Hangup/>
+            <Redirect method="POST">/call</Redirect>
         </Response>
     """, mimetype="text/xml")
 
-@app.route("/transfer", methods=["POST"])
-def transfer():
-    return Response("""
-        <Response>
-            <Say voice="Polly.Nicole">One moment while I transfer you to Jayson.</Say>
-            <Dial>+19076060669</Dial>
-        </Response>
-    """, mimetype="text/xml")
+@app.route("/", methods=["GET"])
+def index():
+    return "✅ AI receptionist is running."
