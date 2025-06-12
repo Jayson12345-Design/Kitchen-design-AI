@@ -1,94 +1,112 @@
-from flask import Flask, request, Response
-import openai
 import os
-import smtplib
-from email.mime.text import MIMEText
-import urllib.parse
 import json
+import smtplib
+from flask import Flask, request, Response
+from twilio.twiml.voice_response import VoiceResponse, Gather, Dial
+from openai import OpenAI
+from email.message import EmailMessage
 
 app = Flask(__name__)
 
-client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-EMAIL_TO = os.getenv("EMAIL_TO")
-EMAIL_FROM = os.getenv("EMAIL_FROM")
-EMAIL_PASS = os.getenv("EMAIL_PASS")
+# Setup OpenAI
+client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
-def send_email(subject, body):
-    msg = MIMEText(body)
-    msg["Subject"] = subject
-    msg["From"] = EMAIL_FROM
-    msg["To"] = EMAIL_TO
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-        smtp.login(EMAIL_FROM, EMAIL_PASS)
-        smtp.send_message(msg)
+# Get environment variables
+FORWARD_NUMBER = os.environ["FORWARD_NUMBER"]
+EMAIL_TO = os.environ["EMAIL_TO"]
+EMAIL_FROM = os.environ["EMAIL_FROM"]
+EMAIL_PASS = os.environ["EMAIL_PASS"]
 
-def generate_reply_and_lead_flag(transcript):
-    system_prompt = (
-        "You are a smart receptionist for a kitchen remodeling company. "
-        "If the caller sounds like a lead (interested in getting a kitchen done), respond with JSON: "
-        '{"reply": "...", "is_lead": true}. If not a lead, use is_lead: false. Respond only in JSON.'
-    )
-    user_prompt = f"Caller said: {transcript}"
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        response_format="json"
-    )
-    try:
-        reply_data = json.loads(response.choices[0].message.content.strip())
-        return reply_data["reply"], reply_data["is_lead"]
-    except Exception as e:
-        print("Failed to parse AI response:", e)
-        return "Sorry, I didn't catch that. Can you please repeat?", False
+@app.route("/", methods=["GET"])
+def index():
+    return "Kitchen Design AI is live!"
 
 @app.route("/call", methods=["POST"])
 def call():
-    return Response("""
-        <Response>
-            <Say voice="Polly.Nicole">Hi, this is Kitchen Design. How can I help you today?</Say>
-            <Record maxLength="30" transcribe="true" transcribeCallback="/transcription" />
-        </Response>
-    """, mimetype="text/xml")
+    response = VoiceResponse()
+
+    gather = Gather(
+        input="speech",
+        action="/transcription",
+        method="POST",
+        timeout=3
+    )
+    gather.say("Hi, this is Kitchen Design. How can I help you today?", voice="Polly.Nicole", language="en-AU")
+    response.append(gather)
+    response.redirect("/call")
+    return Response(str(response), mimetype="text/xml")
 
 @app.route("/transcription", methods=["POST"])
 def transcription():
-    transcript = request.form.get("TranscriptionText", "").strip()
+    transcript = request.form.get("SpeechResult", "").strip()
     caller = request.form.get("From", "Unknown")
     print("Transcript:", transcript)
 
     reply, is_lead = generate_reply_and_lead_flag(transcript)
 
-    email_body = f"📞 Call from: {caller}\n\n📝 Transcript:\n{transcript}\n\n🤖 AI Reply:\n{reply}\n\nLead: {is_lead}"
-    send_email("Kitchen Design Call Summary", email_body)
+    # Send email summary either way
+    send_email_summary(caller, transcript, reply, is_lead)
+
+    response = VoiceResponse()
 
     if is_lead:
-        return Response("""
-            <Response>
-                <Say voice="Polly.Nicole">Transferring you to Jayson now.</Say>
-                <Dial>+19076060669</Dial>
-            </Response>
-        """, mimetype="text/xml")
+        dial = Dial()
+        dial.number(FORWARD_NUMBER)
+        response.say("Transferring you now.", voice="Polly.Nicole", language="en-AU")
+        response.append(dial)
+    else:
+        gather = Gather(
+            input="speech",
+            action="/transcription",
+            method="POST",
+            timeout=3
+        )
+        gather.say(reply, voice="Polly.Nicole", language="en-AU")
+        response.append(gather)
+        response.redirect("/call")
 
-    encoded = urllib.parse.quote(reply)
-    return Response(f"""
-        <Response>
-            <Redirect method="POST">/respond?msg={encoded}</Redirect>
-        </Response>
-    """, mimetype="text/xml")
+    return Response(str(response), mimetype="text/xml")
 
-@app.route("/respond", methods=["POST"])
-def respond():
-    ai_reply = request.args.get("msg", "Thanks! How else can I help?")
-    return Response(f"""
-        <Response>
-            <Say voice="Polly.Nicole">{ai_reply}</Say>
-            <Redirect method="POST">/call</Redirect>
-        </Response>
-    """, mimetype="text/xml")
+def generate_reply_and_lead_flag(transcript):
+    system_prompt = (
+        "You are a receptionist for a kitchen remodeling company. "
+        "If the caller is a lead (wants a kitchen remodel, quote, or meeting), reply in JSON: "
+        '{"reply": "say this to the caller", "is_lead": true}. '
+        "If not a lead, use is_lead: false. Only reply in JSON format."
+    )
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"Caller said: {transcript}"}
+    ]
 
-@app.route("/", methods=["GET"])
-def index():
-    return "✅ AI receptionist is running."
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=messages
+    )
+
+    try:
+        content = response.choices[0].message.content
+        print("AI response:", content)
+        parsed = json.loads(content)
+        return parsed["reply"], parsed["is_lead"]
+    except Exception as e:
+        print("⚠️ Failed to parse AI response:", e)
+        return "Sorry, could you say that again?", False
+
+def send_email_summary(caller, transcript, ai_reply, is_lead):
+    try:
+        msg = EmailMessage()
+        msg["Subject"] = "📞 New AI Call Summary"
+        msg["From"] = EMAIL_FROM
+        msg["To"] = EMAIL_TO
+        msg.set_content(
+            f"Caller: {caller}\n\nTranscript:\n{transcript}\n\nAI Reply:\n{ai_reply}\n\nLead: {is_lead}"
+        )
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+            smtp.login(EMAIL_FROM, EMAIL_PASS)
+            smtp.send_message(msg)
+        print("📧 Email sent.")
+    except Exception as e:
+        print("⚠️ Failed to send email:", e)
+
