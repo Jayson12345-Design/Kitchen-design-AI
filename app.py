@@ -19,7 +19,7 @@ def generate_ai_response(transcript):
 def call():
     response = """
     <Response>
-        <Say voice="alice">Hi, this is Kitchen Design. How can I help you today?</Say>
+        <Say voice="Polly.Nicole">Hi, this is Kitchen Design. How can I help you today?</Say>
         <Record maxLength="30" transcribe="true" transcribeCallback="/transcription" />
     </Response>
     """
@@ -33,7 +33,7 @@ def transcription():
     if "talk to" in transcript or "speak to" in transcript or "real person" in transcript:
         response = f"""
         <Response>
-            <Say voice="alice">Sure, connecting you to someone now.</Say>
+            <Say voice="Polly.Nicole">Sure, connecting you to someone now.</Say>
             <Dial>{FORWARD_NUMBER}</Dial>
         </Response>
         """
@@ -41,7 +41,7 @@ def transcription():
         ai_reply = generate_ai_response(transcript)
         response = f"""
         <Response>
-            <Say voice="alice">{ai_reply}</Say>
+            <Say voice="Polly.Nicole">{ai_reply}</Say>
         </Response>
         """
 
