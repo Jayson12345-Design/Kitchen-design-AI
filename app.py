@@ -4,16 +4,16 @@ import os
 
 app = Flask(__name__)
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 FORWARD_NUMBER = os.getenv("FORWARD_NUMBER", "+19076060669")
 
 def generate_ai_response(transcript):
     prompt = f"You are a receptionist at Kitchen Design. A customer says: '{transcript}'. How do you respond?"
-    response = openai.ChatCompletion.create(
+    chat = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[{"role": "user", "content": prompt}]
     )
-    return response.choices[0].message.content
+    return chat.choices[0].message.content
 
 @app.route("/call", methods=["POST"])
 def call():
