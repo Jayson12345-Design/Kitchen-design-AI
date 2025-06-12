@@ -69,13 +69,7 @@ def transcription():
         """
     else:
         ai_reply = generate_reply(transcript)
-        email_body = f"📞 Call from: {caller}
-
-📝 Transcript:
-{transcript}
-
-🤖 AI Reply:
-{ai_reply}"
+        email_body = f"📞 Call from: {caller}\n\n📝 Transcript:\n{transcript}\n\n🤖 AI Reply:\n{ai_reply}"
         send_email("Kitchen Design Call Summary", email_body)
         response = f"""
         <Response>
