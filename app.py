@@ -3,6 +3,7 @@ import openai
 import os
 import smtplib
 from email.mime.text import MIMEText
+import urllib.parse
 
 app = Flask(__name__)
 
@@ -44,14 +45,22 @@ def call():
 def transcription():
     transcript = request.form.get("TranscriptionText", "").strip()
     caller = request.form.get("From", "Unknown")
-    print("Transcript:", transcript)
-
     ai_reply = generate_reply(transcript)
-    print("AI Reply:", ai_reply)
 
     email_body = f"📞 Call from: {caller}\n\n📝 Transcript:\n{transcript}\n\n🤖 AI Reply:\n{ai_reply}"
     send_email("Kitchen Design Call Summary", email_body)
 
+    # Encode the reply to pass it safely in the URL
+    encoded_reply = urllib.parse.quote(ai_reply)
+    return Response(f"""
+        <Response>
+            <Redirect method="POST">https://kitchen-design-ai-1.onrender.com/response?msg={encoded_reply}</Redirect>
+        </Response>
+    """, mimetype="text/xml")
+
+@app.route("/response", methods=["POST"])
+def response():
+    ai_reply = request.args.get("msg", "Thank you. We'll be in touch.")
     return Response(f"""
         <Response>
             <Say voice="Polly.Nicole">{ai_reply}</Say>
