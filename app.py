@@ -81,7 +81,7 @@ def transcription():
         """
     return Response(response, mimetype="text/xml")
 
-@app.route("/response", methods=["POST"])
+@app.route("/response", methods=["GET", "POST"])
 def response():
     response_type = request.args.get("type")
     if response_type == "forward":
