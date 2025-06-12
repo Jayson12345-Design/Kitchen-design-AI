@@ -21,16 +21,28 @@ def send_email(subject, body):
         smtp.login(EMAIL_FROM, EMAIL_PASS)
         smtp.send_message(msg)
 
-def generate_reply(transcript):
-    prompt = (
-        f"You are a helpful receptionist at Kitchen Design. A customer said: '{transcript}'. "
-        "Reply in a helpful, friendly tone without repeating a greeting."
+def generate_reply_and_lead_flag(transcript):
+    system_prompt = (
+        "You are an AI receptionist for a kitchen remodeling business. "
+        "Analyze the message below. Respond professionally and briefly. "
+        "Also determine if the caller is a LEAD (interested in getting a kitchen done). "
+        "Reply in JSON format with two fields: 'reply' and 'is_lead' (true/false)."
     )
+    user_prompt = f"Customer said: '{transcript}'"
+    
     chat = client.chat.completions.create(
         model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": prompt}]
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        response_format="json"
     )
-    return chat.choices[0].message.content.strip()
+
+    reply_json = chat.choices[0].message.content
+    import json
+    result = json.loads(reply_json)
+    return result["reply"], result["is_lead"]
 
 @app.route("/call", methods=["POST"])
 def call():
@@ -45,18 +57,24 @@ def call():
 def transcription():
     transcript = request.form.get("TranscriptionText", "").strip()
     caller = request.form.get("From", "Unknown")
-    ai_reply = generate_reply(transcript)
+    reply, is_lead = generate_reply_and_lead_flag(transcript)
 
-    email_body = f"📞 Call from: {caller}\n\n📝 Transcript:\n{transcript}\n\n🤖 AI Reply:\n{ai_reply}"
+    email_body = f"📞 Call from: {caller}\n\n📝 Transcript:\n{transcript}\n\n🤖 AI Reply:\n{reply}\n\nLead: {is_lead}"
     send_email("Kitchen Design Call Summary", email_body)
 
-    # Encode the reply to pass it safely in the URL
-    encoded_reply = urllib.parse.quote(ai_reply)
-    return Response(f"""
-        <Response>
-            <Redirect method="POST">https://kitchen-design-ai-1.onrender.com/response?msg={encoded_reply}</Redirect>
-        </Response>
-    """, mimetype="text/xml")
+    if is_lead:
+        return Response("""
+            <Response>
+                <Redirect method="POST">https://kitchen-design-ai-1.onrender.com/transfer</Redirect>
+            </Response>
+        """, mimetype="text/xml")
+    else:
+        encoded = urllib.parse.quote(reply)
+        return Response(f"""
+            <Response>
+                <Redirect method="POST">https://kitchen-design-ai-1.onrender.com/response?msg={encoded}</Redirect>
+            </Response>
+        """, mimetype="text/xml")
 
 @app.route("/response", methods=["POST"])
 def response():
@@ -65,5 +83,14 @@ def response():
         <Response>
             <Say voice="Polly.Nicole">{ai_reply}</Say>
             <Hangup/>
+        </Response>
+    """, mimetype="text/xml")
+
+@app.route("/transfer", methods=["POST"])
+def transfer():
+    return Response("""
+        <Response>
+            <Say voice="Polly.Nicole">One moment while I transfer you to Jayson.</Say>
+            <Dial>+19076060669</Dial>
         </Response>
     """, mimetype="text/xml")
