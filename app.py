@@ -75,7 +75,7 @@ def get_reply(transcript):
     )
     message = chat.choices[0].message.content.lower()
 
-    is_lead = any(keyword in message for keyword in ["lead", kitchen-related", "interested", "quote", "estimate"])
+    is_lead = any(keyword in message for keyword in ["lead", "kitchen-related", "interested", "quote", "estimate"])
     contact_person = None
     if "art" in message:
         contact_person = os.environ.get("PHONE_ART")
