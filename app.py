@@ -42,10 +42,6 @@ def voice():
     response.redirect("/voice")
     return str(response)
 
-@app.route("/call", methods=["POST"])
-def call():
-    return voice()
-
 @app.route("/gather", methods=["POST"])
 def gather():
     response = VoiceResponse()
@@ -54,14 +50,23 @@ def gather():
 
     if "kitchen" in speech_result or "cabinet" in speech_result:
         response.say("Let me transfer you to someone who can help.")
-        response.dial(JAYSON_PHONE)
+        dial = response.dial(timeout=20)
+        dial.number(JAYSON_PHONE)
+        response.say("Jayson was unavailable. Please leave a message or try again later.")
         send_email("Lead Detected", f"Lead from {from_number}: {speech_result}")
+
     elif "paul" in speech_result:
         response.say("Transferring you to Paul now.")
-        response.dial(PAUL_PHONE)
+        dial = response.dial(timeout=20)
+        dial.number(PAUL_PHONE)
+        response.say("Paul was unavailable. Please leave a message or try again later.")
+
     elif "art" in speech_result or "architect" in speech_result:
         response.say("Transferring you to Art now.")
-        response.dial(ART_PHONE)
+        dial = response.dial(timeout=20)
+        dial.number(ART_PHONE)
+        response.say("Art was unavailable. Please leave a message or try again later.")
+
     else:
         prompt = f"Customer: {speech_result}\nReceptionist:"
         try:
@@ -78,7 +83,8 @@ def gather():
             reply = "Sorry, I had trouble understanding that. Could you repeat it?"
 
         response.say(reply)
-        response.redirect("/voice")
+        if "trouble understanding" in reply.lower():
+            response.redirect("/voice")
     return str(response)
 
 if __name__ == "__main__":
