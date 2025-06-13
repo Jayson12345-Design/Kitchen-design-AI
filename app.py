@@ -39,6 +39,7 @@ def voice():
     gather = Gather(input="speech", timeout=3, speechTimeout="auto", action="/gather")
     gather.say("Hi, this is Kitchen Design. How can I help you today?")
     response.append(gather)
+    response.redirect("/voice")
     return str(response)
 
 @app.route("/gather", methods=["POST"])
@@ -47,21 +48,19 @@ def gather():
     speech_result = request.form.get("SpeechResult", "").lower()
     from_number = request.form.get("From")
 
-    if not speech_result.strip():
-        response.say("Sorry, I didn't catch that.")
-        response.redirect("/voice")
-        return str(response)
-
     if "kitchen" in speech_result or "cabinet" in speech_result:
         response.say("Let me transfer you to someone who can help.")
-        response.dial(JAYSON_PHONE)
+        dial = response.dial(action="/voice")
+        dial.number(JAYSON_PHONE)
         send_email("Lead Detected", f"Lead from {from_number}: {speech_result}")
     elif "paul" in speech_result:
         response.say("Transferring you to Paul now.")
-        response.dial(PAUL_PHONE)
+        dial = response.dial(action="/voice")
+        dial.number(PAUL_PHONE)
     elif "art" in speech_result or "architect" in speech_result:
         response.say("Transferring you to Art now.")
-        response.dial(ART_PHONE)
+        dial = response.dial(action="/voice")
+        dial.number(ART_PHONE)
     else:
         prompt = f"Customer: {speech_result}\nReceptionist:"
         try:
@@ -74,15 +73,11 @@ def gather():
                 max_tokens=150,
             )
             reply = chat_response.choices[0].message.content.strip()
-        except Exception:
+        except Exception as e:
             reply = "Sorry, I had trouble understanding that. Could you repeat it?"
 
         response.say(reply)
-        response.pause(length=10)
-        gather = Gather(input="speech", timeout=5, speechTimeout="auto", action="/gather")
-        gather.say("You can ask another question or say who you'd like to speak with.")
-        response.append(gather)
-
+        response.redirect("/voice")
     return str(response)
 
 if __name__ == "__main__":
