@@ -70,9 +70,9 @@ def handle_customer_input(message):
     elif "jayson" in message or is_lead:
         transfer_number = JAYSON_PHONE
 
-    prompt = f"You are a friendly receptionist at a custom kitchen design company. Respond naturally to the customer:\n\nCustomer: {message}\nReceptionist:"
+   prompt = f"Customer: {message}\nReceptionist:"
     chat = client.chat.completions.create(
-        model="gpt-4",
+        model="gpt-3.5-turbo",
         messages=[{"role": "user", "content": prompt}]
     )
     reply = chat.choices[0].message.content.strip()
