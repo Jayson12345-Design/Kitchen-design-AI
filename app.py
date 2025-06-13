@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, jsonify
+from flask import Flask, request
 from twilio.twiml.voice_response import VoiceResponse, Gather, Dial
 from openai import OpenAI
 import smtplib
@@ -7,29 +7,31 @@ from email.mime.text import MIMEText
 
 app = Flask(__name__)
 
+# OpenAI setup
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-TWILIO_ACCOUNT_SID = os.environ["TWILIO_ACCOUNT_SID"]
-TWILIO_AUTH_TOKEN = os.environ["TWILIO_AUTH_TOKEN"]
-EMAIL_USER = os.environ["EMAIL_USER"]
-EMAIL_PASS = os.environ["EMAIL_PASS"]
+# Twilio + Email setup
+TWILIO_PHONE_NUMBER = os.environ["TWILIO_PHONE_NUMBER"]
 JAYSON_PHONE = os.environ["JAYSON_PHONE"]
 PAUL_PHONE = os.environ["PAUL_PHONE"]
 ART_PHONE = os.environ["ART_PHONE"]
+EMAIL_USER = os.environ["EMAIL_USER"]
+EMAIL_PASS = os.environ["EMAIL_PASS"]
 SUMMARY_EMAIL = os.environ["SUMMARY_EMAIL"]
 
-greeting = "Hi, this is Kitchen Design. How can I help you today?"
+# Greeting
+GREETING = "Hi, this is Kitchen Design. How can I help you today?"
 
 @app.route("/", methods=["GET"])
-def home():
-    return "Kitchen AI is live!"
+def index():
+    return "Kitchen AI is live."
 
 @app.route("/call", methods=["POST"])
 def call():
     response = VoiceResponse()
     gather = Gather(input="speech", action="/transcription", method="POST", timeout=5)
-    gather.say(greeting)
+    gather.say(GREETING)
     response.append(gather)
     response.redirect("/call")
     return str(response)
@@ -37,12 +39,13 @@ def call():
 @app.route("/transcription", methods=["POST"])
 def transcription():
     transcript = request.form.get("SpeechResult", "").lower()
-    reply, is_lead, transfer_number = generate_reply_and_lead_flag(transcript)
+    reply, is_lead, transfer_number = handle_customer_input(transcript)
 
     response = VoiceResponse()
+
     if transfer_number:
         response.say("Transferring you now.")
-        dial = Dial()
+        dial = Dial(caller_id=TWILIO_PHONE_NUMBER)
         dial.number(transfer_number)
         response.append(dial)
     else:
@@ -51,11 +54,13 @@ def transcription():
         response.append(gather)
         response.redirect("/call")
 
-    send_summary_email(transcript, reply, is_lead)
+    send_email_summary(transcript, reply, is_lead)
     return str(response)
 
-def generate_reply_and_lead_flag(message):
-    is_lead = any(keyword in message for keyword in ["lead", "kitchen", "interested", "quote", "estimate", "remodel", "job", "cabinet"])
+def handle_customer_input(message):
+    is_lead = any(keyword in message for keyword in [
+        "kitchen", "cabinet", "remodel", "estimate", "quote", "interested"
+    ])
     transfer_number = None
 
     if "paul" in message:
@@ -65,16 +70,17 @@ def generate_reply_and_lead_flag(message):
     elif "jayson" in message or is_lead:
         transfer_number = JAYSON_PHONE
 
-    prompt = f"You are a friendly receptionist at a kitchen cabinet company. Respond to this customer query naturally:\n\nCustomer: {message}\nReceptionist:"
+    prompt = f"You are a friendly receptionist at a custom kitchen design company. Respond naturally to the customer:\n\nCustomer: {message}\nReceptionist:"
     chat = client.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": prompt}]
     )
     reply = chat.choices[0].message.content.strip()
+
     return reply, is_lead, transfer_number
 
-def send_summary_email(transcript, reply, is_lead):
-    subject = "📞 New AI Call Summary"
+def send_email_summary(transcript, reply, is_lead):
+    subject = "📞 Kitchen Design Call Summary"
     body = f"Transcript:\n{transcript}\n\nAI Reply:\n{reply}\n\nLead Detected: {is_lead}"
     msg = MIMEText(body)
     msg["Subject"] = subject
@@ -86,4 +92,4 @@ def send_summary_email(transcript, reply, is_lead):
             smtp.login(EMAIL_USER, EMAIL_PASS)
             smtp.send_message(msg)
     except Exception as e:
-        print("Email send failed:", e)
+        print(f"Failed to send email: {e}")
