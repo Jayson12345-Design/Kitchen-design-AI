@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, Response
+from flask import Flask, request, jsonify
 from twilio.twiml.voice_response import VoiceResponse, Gather, Dial
 from openai import OpenAI
 import smtplib
@@ -7,109 +7,83 @@ from email.mime.text import MIMEText
 
 app = Flask(__name__)
 
-# Environment variables
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+TWILIO_ACCOUNT_SID = os.environ["TWILIO_ACCOUNT_SID"]
+TWILIO_AUTH_TOKEN = os.environ["TWILIO_AUTH_TOKEN"]
 EMAIL_USER = os.environ["EMAIL_USER"]
 EMAIL_PASS = os.environ["EMAIL_PASS"]
-EMAIL_TO = os.environ["EMAIL_TO"]
 JAYSON_PHONE = os.environ["JAYSON_PHONE"]
 PAUL_PHONE = os.environ["PAUL_PHONE"]
 ART_PHONE = os.environ["ART_PHONE"]
+SUMMARY_EMAIL = os.environ["SUMMARY_EMAIL"]
 
-client = OpenAI(api_key=OPENAI_API_KEY)
-
-# Memory to avoid infinite loop
-last_transcript = {"text": ""}
+greeting = "Hi, this is Kitchen Design. How can I help you today?"
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Kitchen Design AI is live"
+    return "Kitchen AI is live!"
 
 @app.route("/call", methods=["POST"])
-def inbound_call():
+def call():
     response = VoiceResponse()
     gather = Gather(input="speech", action="/transcription", method="POST", timeout=5)
-    gather.say("Hi, this is Kitchen Design. How can I help you today?")
+    gather.say(greeting)
     response.append(gather)
     response.redirect("/call")
-    return Response(str(response), mimetype="application/xml")
+    return str(response)
 
 @app.route("/transcription", methods=["POST"])
 def transcription():
-    transcript = request.form.get("SpeechResult", "").strip()
-    if not transcript:
-        return _say_again()
-
-    print("Transcript:", transcript)
-
-    if transcript.lower() == last_transcript["text"].lower():
-        return _say_again()
-    last_transcript["text"] = transcript
-
-    reply, transfer_to = analyze_intent(transcript)
-
-    if transfer_to:
-        response = VoiceResponse()
-        response.say("Transferring your call now.")
-        response.dial(transfer_to)
-        return Response(str(response), mimetype="application/xml")
-
-    send_email(transcript, reply)
+    transcript = request.form.get("SpeechResult", "").lower()
+    reply, is_lead, transfer_number = generate_reply_and_lead_flag(transcript)
 
     response = VoiceResponse()
-    gather = Gather(input="speech", action="/transcription", method="POST", timeout=5)
-    gather.say(reply)
-    response.append(gather)
-    response.redirect("/call")
-    return Response(str(response), mimetype="application/xml")
+    if transfer_number:
+        response.say("Transferring you now.")
+        dial = Dial()
+        dial.number(transfer_number)
+        response.append(dial)
+    else:
+        gather = Gather(input="speech", action="/transcription", method="POST", timeout=5)
+        gather.say(reply)
+        response.append(gather)
+        response.redirect("/call")
 
-def analyze_intent(message):
-    try:
-        chat = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You're an AI assistant for a kitchen design company. Detect if the caller wants to speak to Jayson, Paul, or Art. If not, determine if it's a new kitchen inquiry or something else."},
-                {"role": "user", "content": message}
-            ]
-        )
-        ai_reply = chat.choices[0].message.content.strip()
+    send_summary_email(transcript, reply, is_lead)
+    return str(response)
 
-        # Transfer logic
-        lowered = message.lower()
-        if "paul" in lowered:
-            return ai_reply, PAUL_PHONE
-        if "art" in lowered:
-            return ai_reply, ART_PHONE
-        if "jayson" in lowered or "you" in lowered:
-            return ai_reply, JAYSON_PHONE
+def generate_reply_and_lead_flag(message):
+    is_lead = any(keyword in message for keyword in ["lead", "kitchen", "interested", "quote", "estimate", "remodel", "job", "cabinet"])
+    transfer_number = None
 
-        # Detect lead intent
-        lead_keywords = ["kitchen", "quote", "estimate", "remodel", "design"]
-        if any(word in lowered for word in lead_keywords):
-            return ai_reply, JAYSON_PHONE
+    if "paul" in message:
+        transfer_number = PAUL_PHONE
+    elif "art" in message:
+        transfer_number = ART_PHONE
+    elif "jayson" in message or is_lead:
+        transfer_number = JAYSON_PHONE
 
-        return ai_reply, None
-    except Exception as e:
-        print("Error from OpenAI:", e)
-        return "Sorry, I didn't catch that. Could you repeat it?", None
+    prompt = f"You are a friendly receptionist at a kitchen cabinet company. Respond to this customer query naturally:\n\nCustomer: {message}\nReceptionist:"
+    chat = client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    reply = chat.choices[0].message.content.strip()
+    return reply, is_lead, transfer_number
 
-def send_email(transcript, reply):
-    msg = MIMEText(f"Caller said: {transcript}\n\nAI replied: {reply}")
-    msg["Subject"] = "Kitchen Design Call Summary"
+def send_summary_email(transcript, reply, is_lead):
+    subject = "📞 New AI Call Summary"
+    body = f"Transcript:\n{transcript}\n\nAI Reply:\n{reply}\n\nLead Detected: {is_lead}"
+    msg = MIMEText(body)
+    msg["Subject"] = subject
     msg["From"] = EMAIL_USER
-    msg["To"] = EMAIL_TO
+    msg["To"] = SUMMARY_EMAIL
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(EMAIL_USER, EMAIL_PASS)
-            server.sendmail(EMAIL_USER, EMAIL_TO, msg.as_string())
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+            smtp.login(EMAIL_USER, EMAIL_PASS)
+            smtp.send_message(msg)
     except Exception as e:
-        print("Email failed:", e)
-
-def _say_again():
-    response = VoiceResponse()
-    gather = Gather(input="speech", action="/transcription", method="POST", timeout=5)
-    gather.say("Sorry, I didn't catch that. Can you please repeat?")
-    response.append(gather)
-    response.redirect("/call")
-    return Response(str(response), mimetype="application/xml")
+        print("Email send failed:", e)
