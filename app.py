@@ -42,6 +42,10 @@ def voice():
     response.redirect("/voice")
     return str(response)
 
+@app.route("/call", methods=["POST"])
+def call():
+    return voice()
+
 @app.route("/gather", methods=["POST"])
 def gather():
     response = VoiceResponse()
