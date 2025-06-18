@@ -8,6 +8,7 @@ from email.message import EmailMessage
 
 app = Flask(__name__)
 
+# Environment Variables
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 TWILIO_SID = os.environ["TWILIO_SID"]
 TWILIO_AUTH = os.environ["TWILIO_AUTH"]
@@ -22,6 +23,7 @@ SUMMARY_EMAIL = os.environ["SUMMARY_EMAIL"]
 twilio_client = TwilioClient(TWILIO_SID, TWILIO_AUTH)
 client = OpenAI(api_key=OPENAI_API_KEY)
 
+# Email Function
 def send_email(subject, body):
     msg = EmailMessage()
     msg.set_content(body)
@@ -33,15 +35,16 @@ def send_email(subject, body):
         smtp.login(EMAIL_USER, EMAIL_PASS)
         smtp.send_message(msg)
 
+# FIRST CALL - plays greeting once
 @app.route("/voice", methods=["POST"])
 def voice():
     response = VoiceResponse()
     gather = Gather(input="speech", timeout=3, speechTimeout="auto", action="/gather")
     gather.say("Hi, this is Kitchen Design. How can I help you today?")
     response.append(gather)
-    response.redirect("/voice")
     return str(response)
 
+# AFTER SPEAKING - decide what to do
 @app.route("/gather", methods=["POST"])
 def gather():
     response = VoiceResponse()
@@ -74,19 +77,16 @@ def gather():
             )
             reply = chat_response.choices[0].message.content.strip()
         except Exception as e:
-            reply = "Sorry, I had trouble understanding that. Could you repeat it?"    
-            response.say(reply)
-            response.append(Gather(input="speech", timeout=3, speechTimeout="auto", action="/gather").say("How else can I help you?"))
+            reply = "Sorry, I had trouble understanding that. Could you repeat it?"
+
+        response.say(reply)
+
+        # instead of redirecting, just prompt again
+        gather = Gather(input="speech", timeout=3, speechTimeout="auto", action="/gather")
+        gather.say("How else can I help you?")
+        response.append(gather)
 
     return str(response)
 
 if __name__ == "__main__":
     app.run(debug=True)
-    
-@app.route("/continue", methods=["POST"])
-def continue_convo():
-    response = VoiceResponse()
-    gather = Gather(input="speech", timeout=3, speechTimeout="auto", action="/gather")
-    gather.say("How else can I help you?")
-    response.append(gather)
-    return str(response)
