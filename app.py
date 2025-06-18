@@ -77,8 +77,17 @@ def gather():
             reply = "Sorry, I had trouble understanding that. Could you repeat it?"
 
         response.say(reply)
-        response.redirect("/voice")
+        response.redirect("/continue")
     return str(response)
 
 if __name__ == "__main__":
     app.run(debug=True)
+    
+@app.route("/continue", methods=["POST"])
+def continue_convo():
+    response = VoiceResponse()
+    gather = Gather(input="speech", timeout=3, speechTimeout="auto", action="/gather")
+    gather.say("How else can I help you?")
+    response.append(gather)
+    response.redirect("/continue")  # Keeps the caller in the loop
+    return str(response)
