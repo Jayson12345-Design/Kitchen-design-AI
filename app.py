@@ -74,10 +74,10 @@ def gather():
             )
             reply = chat_response.choices[0].message.content.strip()
         except Exception as e:
-            reply = "Sorry, I had trouble understanding that. Could you repeat it?"
+            reply = "Sorry, I had trouble understanding that. Could you repeat it?"    
+            response.say(reply)
+            response.append(Gather(input="speech", timeout=3, speechTimeout="auto", action="/gather").say("How else can I help you?"))
 
-        response.say(reply)
-        response.redirect("/continue")
     return str(response)
 
 if __name__ == "__main__":
@@ -89,5 +89,4 @@ def continue_convo():
     gather = Gather(input="speech", timeout=3, speechTimeout="auto", action="/gather")
     gather.say("How else can I help you?")
     response.append(gather)
-    response.redirect("/continue")  # Keeps the caller in the loop
     return str(response)
